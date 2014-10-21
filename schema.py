@@ -8,6 +8,10 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE players
                  (name text PRIMARY KEY, elo real, wins int, losses int)''')
+    c.execute('''CREATE TABLE players_ffa
+                 (name text PRIMARY KEY, elo real, wins int, losses int)''')
+    c.execute('''CREATE TABLE players_team
+                 (name text PRIMARY KEY, elo real, wins int, losses int)''')
     conn.commit()
 
 if __name__ == "__main__":
