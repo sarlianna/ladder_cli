@@ -69,11 +69,6 @@ def add_player(mode, name):
 def match(winner, loser):
     _match_update(winner, loser, "players")
 
-
-def team(winner, loser):
-    _match_update(winner, loser, "players_team")
-
-
 def _match_update(winner, loser, table):
     '''change and store player's ratings.  First player listed is assumed to have won.'''
     cursor = db.cursor()
@@ -101,6 +96,56 @@ def _match_update(winner, loser, table):
     print tabulate(table, headers=headers)
 
 
+def team(winner, second_winner, loser, second_loser):
+    cursor = db.cursor()
+    players = [winner, second_winner, loser, second_loser]
+    winners = [winner, second_winner]
+    losers  = [loser, second_loser]
+
+    cursor.execute("SELECT name, elo, wins, losses FROM players_team WHERE name=? OR name=? OR name=? OR name=?", players)
+    rows = cursor.fetchall()
+    winner_objs = rows[:2]
+    loser_obs = rows[2:]
+    winners_elo = sum([win[1] for win in winner_objs]) / 2.0
+    losers_elo = sum([lose[1] for lose in loser_objs]) / 2.0
+
+    win_elo_change  = [_update_single(1, win, losers_elo, "players_team") for win in winners]
+    loss_elo_change = [_update_single(0, loss, winners_elo, "players_team") for loss in losers]
+
+    winners_info = [[winner, change[0], change[1]] for winner, change in zip(winners, win_elo_change)]
+    losers_info  = [[loser, change[0], change[1]] for loser, change in zip(losers, loss_elo_change)]
+    table        = winners_info + losers_info
+
+    headers = ["Player", "Elo change", "New Elo"]
+    print tabulate(table, headers=headers)
+
+
+def _update_single(score, player, opponents_elo, table):
+    '''update a single player given that player's score, rank, and average elo of opponents.
+    returns a tuple with (elo change, new current elo)'''
+    cursor = db.cursor()
+    cursor.execute("SELECT name, elo, wins, losses FROM {table} WHERE name=?".format(table=table), player)
+    rows = cursor.fetchall()
+    player_obj = rows[0]
+    player_new_elo = calc_elo_change(score, player_obj[1], opponents_elo)
+    if score == 1:
+        plus_wins = 1
+        plus_losses = 0
+    elif score == 0:
+        plus_wins = 0
+        plus_losses = 1
+    else:
+        plus_wins = 0
+        plus_losses = 0
+
+    updated = (player_new_elo, player_obj[2] + plus_wins, player_obj[3] + plus_losses, player)
+    cursor.execute("UPDATE {table} SET elo=?, wins=?, losses=? WHERE name=?".format(table=table), updated)
+    db.commit()
+
+    return (player_obj[1] - player_new_elo, player_new_elo)
+
+
+# TODO: rewrite to use _update_single
 def ffa(winner, losers):
     '''change and store a player's ratings.  Expects winner as a single player, losers as a list.'''
     def average(x, y):
@@ -135,11 +180,11 @@ def ffa(winner, losers):
 
 def print_help():
     print "Usage:"
-    print "[ladder | l] [1s|ffa|2s]          -- Print all players' ratings sorted by elo.  Default is to print a table for all modes."
-    print "match | m <winner> <loser>        -- Change and store ratings for a single 1v1 match."
-    print "ffa | f <winner> <loser> <loser>  -- Change and store ratings for a single ffa match."
-    print "team | t <winner> <loser>         -- Change and store ratings for a single 2v2 match."
-    print "add [1s|ffa|2s|all] <player name> -- Add a player to the ladder. Name must be unique."
+    print "[ladder | l] [1s|ffa|2s]                   -- Print all players' ratings sorted by elo.  Default is to print a table for all modes."
+    print "match | m <winner> <loser>                 -- Change and store ratings for a single 1v1 match."
+    print "ffa | f <winner> <loser> <loser>           -- Change and store ratings for a single ffa match."
+    print "team | t <winner> <winner> <loser> <loser> -- Change and store ratings for a single 2v2 match."
+    print "add [1s|ffa|2s|all] <player name>          -- Add a player to the ladder. Name must be unique."
 
 
 if __name__ == "__main__":
@@ -160,8 +205,8 @@ if __name__ == "__main__":
         add_player(args[2], args[3])
     elif len(args) == 5 and (args[1] == "ffa" or args[1] == "f"):
         ffa(args[2], [args[3], args[4]])
-    elif len(args) == 4 and (args[1] == "team" or args[1] == "t"):
-        team(args[2], args[3])
+    elif len(args) == 6 and (args[1] == "team" or args[1] == "t"):
+        team(args[2], args[3], args[4], args[5])
     else:
         print_help()
     db.close()
